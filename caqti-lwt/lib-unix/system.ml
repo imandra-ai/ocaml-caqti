@@ -40,10 +40,15 @@ module Alarm = struct
   let schedule ~sw:_ ~stdenv:() t f =
     let t_now = Mtime_clock.now () in
     let delay =
+      (* [t] is the absolute time the alarm should fire.  If it is still in the
+         future, sleep until then; otherwise it is already due, so yield and
+         fire as soon as possible.  (Previously these branches were swapped,
+         which turned a scheduled alarm into a tight Lwt.pause loop and pinned
+         a CPU core whenever a pool used max_idle_age.) *)
       if Mtime.is_later t ~than:t_now then
-        Lwt.pause ()
-      else
         Lwt_unix.sleep (Mtime.Span.to_float_ns (Mtime.span t t_now) *. 1e-9)
+      else
+        Lwt.pause ()
     in
     let task = delay >|= f in
     {cancel = (fun () -> Lwt.cancel task)}
